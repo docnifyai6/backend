@@ -985,7 +985,8 @@ async def explain_document(file: UploadFile = File(...), mode: str = Form("simpl
                 # Check document limit for unverified users (2 documents)
                 if doc_count >= 2:
                     requires_verification = True
-                    raise HTTPException(status_code=429, detail="Document limit reached. You've used your 2 free documents! Please verify your email to continue with unlimited access.")
+                    # Don't raise exception, let frontend show modal
+                    # raise HTTPException(status_code=429, detail="Document limit reached. You've used your 2 free documents! Please verify your email to continue with unlimited access.")
         else:
             # New user, create document
             db.collection('users').document(user["user_id"]).set({
