@@ -66,7 +66,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://backend-yf9u.onrender.com","https://docnifyai22.web.app"],
     allow_credentials=True,
-    allow_methods=["POST", "GET", "DELETE"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
