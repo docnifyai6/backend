@@ -982,9 +982,9 @@ async def explain_document(file: UploadFile = File(...), mode: str = Form("simpl
             
             # Check if user needs email verification
             if not email_verified:
-                requires_verification = True
                 # Check document limit for unverified users (2 documents)
                 if doc_count >= 2:
+                    requires_verification = True
                     raise HTTPException(status_code=429, detail="Document limit reached. Signed-in users can process 2 documents. Please verify your email to continue.")
         else:
             # New user, create document
@@ -995,8 +995,7 @@ async def explain_document(file: UploadFile = File(...), mode: str = Form("simpl
                 'email_verified': email_verified,
                 'document_count': 0
             })
-            if not email_verified:
-                requires_verification = True
+            # Don't set requires_verification for new users
     else:
         # Check IP usage limit for non-authenticated users
         if not check_ip_usage(client_ip):
