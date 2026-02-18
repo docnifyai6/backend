@@ -24,6 +24,10 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.units import inch
+from docx import Document
+from pptx import Presentation
+from openpyxl import load_workbook
+import markdown
 
 import requests
 import tempfile
@@ -729,6 +733,36 @@ def compress_pdf(pdf_content: bytes) -> bytes:
     except:
         return pdf_content
 
+def ocr_space_image(image_content: bytes) -> str:
+    """Extract text from image using OCR.space API"""
+    OCR_API_KEY = os.getenv("OCR_SPACE_API_KEY", "helloworld")
+    url = "https://api.ocr.space/parse/image"
+    
+    try:
+        response = requests.post(
+            url,
+            files={"file": image_content},
+            data={
+                "apikey": OCR_API_KEY,
+                "language": "eng",
+                "isOverlayRequired": False,
+                "scale": "true",
+                "OCREngine": "2"
+            },
+            timeout=60
+        )
+        
+        result = response.json()
+        
+        if result.get("IsErroredOnProcessing"):
+            raise Exception(result.get("ErrorMessage", "OCR processing failed"))
+        
+        return "\n".join(
+            r["ParsedText"] for r in result.get("ParsedResults", [])
+        )
+    except Exception as e:
+        raise Exception(f"OCR failed: {str(e)}")
+
 def ocr_space_pdf(pdf_content: bytes) -> str:
     """Extract text from PDF using OCR.space API"""
     OCR_API_KEY = os.getenv("OCR_SPACE_API_KEY", "helloworld")
@@ -764,6 +798,62 @@ def ocr_space_pdf(pdf_content: bytes) -> str:
         )
     finally:
         os.unlink(tmp_path)
+
+def extract_text_from_file(file: UploadFile) -> str:
+    """Extract text from various file formats"""
+    filename = file.filename.lower()
+    
+    try:
+        file.file.seek(0)
+        content = file.file.read()
+        file.file.seek(0)
+        
+        if not content:
+            raise HTTPException(status_code=400, detail="Empty file")
+        
+        if filename.endswith('.pdf'):
+            return extract_text_from_pdf(file)
+        elif filename.endswith(('.docx', '.doc')):
+            doc = Document(io.BytesIO(content))
+            return '\n'.join([para.text for para in doc.paragraphs if para.text.strip()])
+        elif filename.endswith(('.pptx', '.ppt')):
+            prs = Presentation(io.BytesIO(content))
+            text = []
+            for slide in prs.slides:
+                for shape in slide.shapes:
+                    if hasattr(shape, 'text'):
+                        text.append(shape.text)
+            return '\n'.join(text)
+        elif filename.endswith(('.xlsx', '.xls')):
+            wb = load_workbook(io.BytesIO(content))
+            text = []
+            for sheet in wb.worksheets:
+                for row in sheet.iter_rows(values_only=True):
+                    row_text = ' '.join([str(cell) for cell in row if cell])
+                    if row_text.strip():
+                        text.append(row_text)
+            return '\n'.join(text)
+        elif filename.endswith('.csv'):
+            return content.decode('utf-8')
+        elif filename.endswith(('.jpg', '.jpeg', '.png')):
+            try:
+                ocr_text = ocr_space_image(content)
+                if ocr_text.strip():
+                    return ocr_text.strip()
+                else:
+                    raise HTTPException(status_code=400, detail="Could not extract text from image")
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Image OCR failed: {str(e)}")
+        elif filename.endswith('.md'):
+            return content.decode('utf-8')
+        elif filename.endswith('.txt'):
+            return content.decode('utf-8')
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file format")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error processing file: {str(e)}")
 
 def extract_text_from_pdf(pdf_file: UploadFile) -> str:
     """Extract text from PDF file with OCR.space fallback"""
@@ -938,10 +1028,7 @@ def answer_question_with_gemini(document_text: str, question: str) -> Dict:
 
 @app.post("/explain", response_model=DocumentExplanation)
 async def explain_document(file: UploadFile = File(...), mode: str = Form("simple"), request: Request = None, authorization: str = Header(None)):
-    """Process PDF document and return simple explanation"""
-    
-    if not file.filename.lower().endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+    """Process document and return simple explanation"""
     
     file.file.seek(0, 2)
     file_size = file.file.tell()
@@ -1010,7 +1097,7 @@ async def explain_document(file: UploadFile = File(...), mode: str = Form("simpl
         pdf_content = file.file.read()
         file.file.seek(0)
 
-        document_text = extract_text_from_pdf(file)
+        document_text = extract_text_from_file(file)
         explanation = explain_document_with_gemini(document_text, mode)
 
         # Store documents and increment count for authenticated users
