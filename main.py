@@ -835,15 +835,6 @@ def extract_text_from_file(file: UploadFile) -> str:
             return '\n'.join(text)
         elif filename.endswith('.csv'):
             return content.decode('utf-8')
-        elif filename.endswith(('.jpg', '.jpeg', '.png')):
-            try:
-                ocr_text = ocr_space_image(content)
-                if ocr_text.strip():
-                    return ocr_text.strip()
-                else:
-                    raise HTTPException(status_code=400, detail="Could not extract text from image")
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=f"Image OCR failed: {str(e)}")
         elif filename.endswith('.md'):
             return content.decode('utf-8')
         elif filename.endswith('.txt'):
